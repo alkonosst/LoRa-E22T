@@ -22,6 +22,9 @@ static constexpr uint8_t RESET_PULSE_MS = 1;
 // Module startup time after reset (T1 = 16ms typical per manual) + margin
 static constexpr uint8_t MODULE_STARTUP_MS = 20;
 
+// Delay required after changing modes; 20ms is sufficient per manual: 9-11ms typical + good margin
+static constexpr uint8_t DELAY_POST_MODE_CHANGE_MS = 20;
+
 // Reads a single register byte, modifies the bits specified by mask/shift, then writes it back.
 static void _applyBits(uint8_t& reg_val, uint8_t value, uint8_t shift, uint8_t mask) {
   reg_val = (reg_val & ~(mask << shift)) | ((value & mask) << shift);
@@ -110,8 +113,7 @@ Status LoRaE22T::setMode(const Mode mode) {
 
   _current_mode = mode;
 
-  // Delay required after changing modes; 10ms is sufficient per manual (2ms typical) + margin
-  return _waitAuxHigh(10);
+  return _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
 }
 
 Status LoRaE22T::getMode(Mode& mode) const {
@@ -817,8 +819,10 @@ int16_t LoRaE22T::getLastPacketRSSI() const { return -(256 - static_cast<int16_t
 
 Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
   if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Transmission);
-  if (status != Status::Ok) return status;
+
+  Status status1 = _checkMode(Mode::Transmission);
+  Status status2 = _checkMode(Mode::WakeOnRadio);
+  if (status1 != Status::Ok && status2 != Status::Ok) return Status::WrongMode;
 
   // Flush stale bytes before sending
   while (_serial->available())
@@ -855,7 +859,9 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
   const uint8_t resp_addr = static_cast<uint8_t>(_serial->read());
   const uint8_t resp_len  = static_cast<uint8_t>(_serial->read());
 
-  if (resp_cmd != 0xC1 || resp_addr != 0x00 || resp_len != 0x01) return Status::CommandFailed;
+  if (resp_cmd != static_cast<uint8_t>(Command::ReadRegister) || resp_addr != 0x00 ||
+      resp_len != 0x01)
+    return Status::CommandFailed;
 
   const uint8_t raw_rssi = static_cast<uint8_t>(_serial->read());
   rssi_dbm               = -(256 - static_cast<int16_t>(raw_rssi));

@@ -252,6 +252,86 @@ void test_wor_delay_roundtrip() {
   enter_transmission_mode();
 }
 
+void test_air_data_rate_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setAirDataRate400_900(AirDataRate400_900::Kbps19_2));
+  uint8_t rate = 0;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getAirDataRate(rate));
+  TEST_ASSERT_EQUAL_HEX8(static_cast<uint8_t>(AirDataRate400_900::Kbps19_2), rate);
+  lora.setAirDataRate400_900(AirDataRate400_900::Kbps2_4); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_subpacket_length_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setSubpacketLength(SubpacketLength::Bytes64));
+  SubpacketLength len;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getSubpacketLength(len));
+  TEST_ASSERT_EQUAL(SubpacketLength::Bytes64, len);
+  lora.setSubpacketLength(SubpacketLength::Bytes240); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_transmission_power_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setTransmissionPower30dBm(TxPower30dBm::dBm21));
+  uint8_t power = 0;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getTransmissionPower(power));
+  TEST_ASSERT_EQUAL_HEX8(static_cast<uint8_t>(TxPower30dBm::dBm21), power);
+  lora.setTransmissionPower30dBm(TxPower30dBm::dBm30); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_packet_rssi_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setPacketRSSI(true));
+  bool enabled = false;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getPacketRSSI(enabled));
+  TEST_ASSERT_TRUE(enabled);
+  lora.setPacketRSSI(false); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_relay_mode_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setRelayMode(true));
+  bool enabled = false;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getRelayMode(enabled));
+  TEST_ASSERT_TRUE(enabled);
+  lora.setRelayMode(false); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_listen_before_talk_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setListenBeforeTalk(true));
+  bool enabled = false;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getListenBeforeTalk(enabled));
+  TEST_ASSERT_TRUE(enabled);
+  lora.setListenBeforeTalk(false); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_wor_mode_roundtrip() {
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setWORMode(WORMode::Transmitter));
+  WORMode mode;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.getWORMode(mode));
+  TEST_ASSERT_EQUAL(WORMode::Transmitter, mode);
+  lora.setWORMode(WORMode::Receiver); // restore factory default
+  enter_transmission_mode();
+}
+
+void test_encryption_key_write_only() {
+  enter_config_mode();
+  // encryption_key is write-only; the module always returns 0x0000 on read.
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setEncryptionKey(0xCAFE));
+  // Cannot read back the key; just confirm no error was returned above.
+  // Restore: the module treats 0x0000 as no encryption.
+  lora.setEncryptionKey(0x0000);
+  enter_transmission_mode();
+}
+
 /* ---------------------------------------------------------------------------------------------- */
 /*                                  Full config struct roundtrip                                  */
 /* ---------------------------------------------------------------------------------------------- */
@@ -302,6 +382,29 @@ void test_full_config_roundtrip() {
   TEST_ASSERT_EQUAL_UINT16(cfg.wor_delay_ms, rb.wor_delay_ms);
 
   lora.setFactorySettings(); // restore
+  enter_transmission_mode();
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/*                                         Ambient RSSI                                           */
+/* ---------------------------------------------------------------------------------------------- */
+
+void test_read_ambient_rssi() {
+  // Enable ambient RSSI feature first
+  enter_config_mode();
+  TEST_ASSERT_EQUAL(Status::Ok, lora.setAmbientRSSI(true));
+  enter_transmission_mode();
+
+  int16_t rssi = 0;
+  TEST_ASSERT_EQUAL(Status::Ok, lora.readAmbientRSSI(rssi));
+
+  // Valid RSSI range per E22 datasheet: -160 to 0 dBm
+  TEST_ASSERT_GREATER_OR_EQUAL_INT16(-160, rssi);
+  TEST_ASSERT_LESS_OR_EQUAL_INT16(0, rssi);
+
+  // Restore: disable ambient RSSI
+  enter_config_mode();
+  lora.setAmbientRSSI(false);
   enter_transmission_mode();
 }
 
@@ -359,7 +462,20 @@ void setup() {
   RUN_TEST(test_transmission_mode_roundtrip);
   RUN_TEST(test_wor_cycle_time_roundtrip);
   RUN_TEST(test_wor_delay_roundtrip);
+  RUN_TEST(test_air_data_rate_roundtrip);
+  RUN_TEST(test_subpacket_length_roundtrip);
+  RUN_TEST(test_transmission_power_roundtrip);
+  RUN_TEST(test_packet_rssi_roundtrip);
+  RUN_TEST(test_relay_mode_roundtrip);
+  RUN_TEST(test_listen_before_talk_roundtrip);
+  RUN_TEST(test_wor_mode_roundtrip);
+  RUN_TEST(test_encryption_key_write_only);
+
+  // Full config struct roundtrip
   RUN_TEST(test_full_config_roundtrip);
+
+  // Ambient RSSI
+  RUN_TEST(test_read_ambient_rssi);
 
   // Data transmission
   RUN_TEST(test_send_transparent_data_succeeds);
