@@ -6,13 +6,13 @@ namespace E22 {
 
 /// @brief Models supported by this library.
 enum class Model : uint8_t {
-  None,        // No model specified
-  E22_230T22S, // 230MHz, 22dBm
-  E22_230T30S, // 230MHz, 30dBm
-  E22_400T22S, // 400MHz, 22dBm
-  E22_400T30S, // 400MHz, 30dBm
-  E22_900T22S, // 900MHz, 22dBm
-  E22_900T30S, // 900MHz, 30dBm
+  None,       // No model specified
+  E22_230T22, // 230MHz, 22dBm
+  E22_230T30, // 230MHz, 30dBm
+  E22_400T22, // 400MHz, 22dBm
+  E22_400T30, // 400MHz, 30dBm
+  E22_900T22, // 900MHz, 22dBm
+  E22_900T30, // 900MHz, 30dBm
 };
 
 /// @brief Module operating modes.

@@ -29,7 +29,7 @@ class LoRaE22T {
    * @return `Status::Ok` if success, error status otherwise.
    */
   Status begin(const Model model, HardwareSerial& serial, const int8_t m0, const int8_t m1,
-    const int8_t aux, const int8_t pin_reset = -1, const uint8_t aux_pin_delay_ms = 3,
+    const int8_t aux, const int8_t pin_reset = -1, const uint8_t aux_pin_delay_ms = 2,
     const uint16_t aux_timeout_ms = 500);
 
   /**
@@ -526,7 +526,7 @@ class LoRaE22T {
   };
 
   // Wait for AUX pin to go HIGH, indicating the module is ready for the next command
-  Status _waitAuxHigh();
+  Status _waitAuxHigh(const uint8_t delay_after_high_ms = 0);
 
   // Check if the module is in the required mode
   Status _checkMode(const Mode required_mode);
