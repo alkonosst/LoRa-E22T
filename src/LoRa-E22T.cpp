@@ -839,12 +839,8 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
 
   // Special command format: C0 C1 C2 C3 <start_addr> <length>
   // Register 0x00 = current ambient noise RSSI
-  _serial->write(static_cast<uint8_t>(0xC0));
-  _serial->write(static_cast<uint8_t>(0xC1));
-  _serial->write(static_cast<uint8_t>(0xC2));
-  _serial->write(static_cast<uint8_t>(0xC3));
-  _serial->write(static_cast<uint8_t>(0x00)); // start address
-  _serial->write(static_cast<uint8_t>(0x01)); // length = 1 byte
+  const uint8_t cmd_sequence[] = {0xC0, 0xC1, 0xC2, 0xC3, 0x00, 0x01};
+  _serial->write(cmd_sequence, sizeof(cmd_sequence));
 
   // Response: C1 <addr> <len> <rssi_byte> = 4 bytes
   const uint32_t start_time = millis();
@@ -890,6 +886,13 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms)
   }
 
   if (post_delay_ms > 0) delay(post_delay_ms);
+
+  // After the post-delay, check for a secondary AUX LOW pulse. This occurs when switching FROM
+  // Configuration mode to another mode
+  const uint32_t secondary_start = millis();
+  while (digitalRead(_aux) == LOW) {
+    if (millis() - secondary_start > AUX_TIMEOUT_MS) return Status::AuxTimeout;
+  }
 
   return Status::Ok;
 }
