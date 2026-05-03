@@ -17,14 +17,8 @@ static constexpr int8_t PIN_E22_RESET  = -1; // not used in this test
 static constexpr uint8_t PIN_SERIAL_TX = 11;
 static constexpr uint8_t PIN_SERIAL_RX = 12;
 
-// Delay parameters
-static constexpr uint8_t AUX_PIN_DELAY_MS = 2;
-static constexpr uint16_t AUX_TIMEOUT_MS  = 500;
-
-// Module used for testing
-static constexpr Model MODULE_MODEL = Model::E22_900T30;
-
-// Config mode always communicates at 9600 8N1 per the E22 datasheet
+// Module config
+static constexpr Model MODULE_MODEL   = Model::E22_900T30;
 static constexpr uint32_t MODULE_BAUD = 9600;
 
 // Factory default channel for 900MHz models (register value 0x12)
@@ -52,26 +46,12 @@ static void enter_transmission_mode() {
 /* ---------------------------------------------------------------------------------------------- */
 
 void test_begin_succeeds() {
-  Status s = lora.begin(MODULE_MODEL,
-    Serial1,
-    PIN_E22_M0,
-    PIN_E22_M1,
-    PIN_E22_AUX,
-    PIN_E22_RESET,
-    AUX_PIN_DELAY_MS,
-    AUX_TIMEOUT_MS);
+  Status s = lora.begin(MODULE_MODEL, Serial1, PIN_E22_M0, PIN_E22_M1, PIN_E22_AUX, PIN_E22_RESET);
   TEST_ASSERT_EQUAL(Status::Ok, s);
 }
 
 void test_begin_already_initialized() {
-  Status s = lora.begin(MODULE_MODEL,
-    Serial1,
-    PIN_E22_M0,
-    PIN_E22_M1,
-    PIN_E22_AUX,
-    PIN_E22_RESET,
-    AUX_PIN_DELAY_MS,
-    AUX_TIMEOUT_MS);
+  Status s = lora.begin(MODULE_MODEL, Serial1, PIN_E22_M0, PIN_E22_M1, PIN_E22_AUX, PIN_E22_RESET);
   TEST_ASSERT_EQUAL(Status::AlreadyInitialized, s);
 }
 
