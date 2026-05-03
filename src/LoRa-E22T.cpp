@@ -19,11 +19,17 @@ static constexpr uint16_t WIRELESS_RESPONSE_TIMEOUT_MS = 2000;
 // RESET pin minimum LOW time per manual (>100us); 1ms is safe on any platform
 static constexpr uint8_t RESET_PULSE_MS = 1;
 
-// Module startup time after reset (T1 = 16ms typical per manual) + margin
+// Module startup time after reset: 16ms per manual + margin
 static constexpr uint8_t MODULE_STARTUP_MS = 20;
 
-// Delay required after changing modes; 20ms is sufficient per manual: 9-11ms typical + good margin
-static constexpr uint8_t DELAY_POST_MODE_CHANGE_MS = 20;
+// Delay to wait AUX LOW after sending data to RX pin: 1ms per manual + margin
+static constexpr uint8_t AUX_PIN_DELAY_MS = 2;
+
+// Timeout to wait for AUX to go HIGH after a transaction
+static constexpr uint16_t AUX_TIMEOUT_MS = 500;
+
+// Delay required after changing modes: 9-11ms per manual + margin
+static constexpr uint8_t POST_MODE_CHANGE_DELAY_MS = 20;
 
 // Reads a single register byte, modifies the bits specified by mask/shift, then writes it back.
 static void _applyBits(uint8_t& reg_val, uint8_t value, uint8_t shift, uint8_t mask) {
@@ -33,21 +39,18 @@ static void _applyBits(uint8_t& reg_val, uint8_t value, uint8_t shift, uint8_t m
 /* --------------------------------- Initialization and control --------------------------------- */
 
 Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m0, const int8_t m1,
-  const int8_t aux, const int8_t pin_reset, const uint8_t aux_pin_delay_ms,
-  const uint16_t aux_timeout_ms) {
+  const int8_t aux, const int8_t pin_reset) {
   if (_initialized) return Status::AlreadyInitialized;
 
   if (model == Model::None) return Status::ModelNotSet;
   if (m0 == -1 || m1 == -1 || aux == -1) return Status::PinsNotSet;
 
-  _model            = model;
-  _serial           = &serial;
-  _m0               = m0;
-  _m1               = m1;
-  _aux              = aux;
-  _pin_reset        = pin_reset;
-  _aux_pin_delay_ms = aux_pin_delay_ms;
-  _aux_timeout_ms   = aux_timeout_ms;
+  _model     = model;
+  _serial    = &serial;
+  _m0        = m0;
+  _m1        = m1;
+  _aux       = aux;
+  _pin_reset = pin_reset;
 
   pinMode(_m0, OUTPUT);
   pinMode(_m1, OUTPUT);
@@ -63,7 +66,7 @@ Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m
     digitalWrite(_pin_reset, HIGH);
   }
 
-  Status status = _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
+  Status status = _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
   if (status != Status::Ok) return status;
 
   _initialized = true;
@@ -83,7 +86,7 @@ Status LoRaE22T::reset() {
   delay(MODULE_STARTUP_MS);
 
   // Wait for AUX to go HIGH, signalling the module is ready
-  return _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
+  return _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
 }
 
 Status LoRaE22T::setMode(const Mode mode) {
@@ -113,7 +116,7 @@ Status LoRaE22T::setMode(const Mode mode) {
 
   _current_mode = mode;
 
-  return _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
+  return _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
 }
 
 Status LoRaE22T::getMode(Mode& mode) const {
@@ -792,6 +795,12 @@ Status LoRaE22T::readData(const bool includes_rssi, uint8_t* buffer, const size_
   size_t& data_size) {
   if (!_initialized) return Status::Uninitialized;
 
+  // Wait for AUX to go high indicating data is ready
+  // pre_delay=false because if data is available, AUX will already be LOW and we can skip the
+  // initial delay (AUX goes to LOW before data starts arriving to serial)
+  Status status = _waitAuxHigh(false);
+  if (status != Status::Ok) return status;
+
   const size_t available = _serial->available();
   if (available <= 0) {
     data_size = 0;
@@ -871,17 +880,16 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
 
 /* --------------------------------------- Private methods -------------------------------------- */
 
-Status LoRaE22T::_waitAuxHigh(const uint8_t delay_after_high_ms) {
+Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms) {
   const uint32_t start_time = millis();
 
-  // NOTE: delay before while() is necessary to avoid reading the same state
-  if (_aux_pin_delay_ms > 0) delay(_aux_pin_delay_ms);
+  if (pre_delay) delay(AUX_PIN_DELAY_MS);
 
   while (digitalRead(_aux) == LOW) {
-    if (millis() - start_time > _aux_timeout_ms) return Status::AuxTimeout;
+    if (millis() - start_time > AUX_TIMEOUT_MS) return Status::AuxTimeout;
   }
 
-  if (delay_after_high_ms > 0) delay(delay_after_high_ms);
+  if (post_delay_ms > 0) delay(post_delay_ms);
 
   return Status::Ok;
 }

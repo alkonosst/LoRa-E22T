@@ -23,14 +23,10 @@ class LoRaE22T {
    * @param m1 GPIO pin connected to the module's M1 pin.
    * @param aux GPIO pin connected to the module's AUX pin.
    * @param pin_reset GPIO pin connected to the module's RESET pin. Optional, set to -1 if not used.
-   * @param aux_pin_delay_ms Delay in milliseconds for AUX pin stabilization. This is the delay
-   * after changing modes before reading AUX pin state, to avoid reading the previous mode's state.
-   * @param aux_timeout_ms Timeout in milliseconds for waiting for AUX pin to go HIGH.
    * @return `Status::Ok` if success, error status otherwise.
    */
   Status begin(const Model model, HardwareSerial& serial, const int8_t m0, const int8_t m1,
-    const int8_t aux, const int8_t pin_reset = -1, const uint8_t aux_pin_delay_ms = 2,
-    const uint16_t aux_timeout_ms = 500);
+    const int8_t aux, const int8_t pin_reset = -1);
 
   /**
    * @brief Pulse the RESET pin LOW then wait for the module to restart. Requires `pin_reset != -1`.
@@ -507,17 +503,15 @@ class LoRaE22T {
   Status readAmbientRSSI(int16_t& rssi_dbm);
 
   private:
-  bool _initialized         = false;
-  Model _model              = Model::None;
-  HardwareSerial* _serial   = nullptr;
-  int8_t _m0                = -1;
-  int8_t _m1                = -1;
-  int8_t _aux               = -1;
-  int8_t _pin_reset         = -1;
-  uint8_t _aux_pin_delay_ms = 0;
-  uint16_t _aux_timeout_ms  = 0;
-  Mode _current_mode        = Mode::Transmission;
-  uint8_t _last_rssi        = 0;
+  bool _initialized       = false;
+  Model _model            = Model::None;
+  HardwareSerial* _serial = nullptr;
+  int8_t _m0              = -1;
+  int8_t _m1              = -1;
+  int8_t _aux             = -1;
+  int8_t _pin_reset       = -1;
+  Mode _current_mode      = Mode::Transmission;
+  uint8_t _last_rssi      = 0;
 
   enum class Command : uint8_t {
     SetRegister          = 0xC0,
@@ -526,7 +520,7 @@ class LoRaE22T {
   };
 
   // Wait for AUX pin to go HIGH, indicating the module is ready for the next command
-  Status _waitAuxHigh(const uint8_t delay_after_high_ms = 0);
+  Status _waitAuxHigh(const bool pre_delay = true, const uint8_t post_delay_ms = 0);
 
   // Check if the module is in the required mode
   Status _checkMode(const Mode required_mode);
