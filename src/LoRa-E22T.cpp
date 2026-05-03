@@ -63,7 +63,7 @@ Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m
     digitalWrite(_pin_reset, HIGH);
   }
 
-  Status status = _waitAuxHigh();
+  Status status = _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
   if (status != Status::Ok) return status;
 
   _initialized = true;
@@ -83,7 +83,7 @@ Status LoRaE22T::reset() {
   delay(MODULE_STARTUP_MS);
 
   // Wait for AUX to go HIGH, signalling the module is ready
-  return _waitAuxHigh();
+  return _waitAuxHigh(DELAY_POST_MODE_CHANGE_MS);
 }
 
 Status LoRaE22T::setMode(const Mode mode) {
@@ -937,10 +937,12 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
     return Status::CommandFailed;
   }
 
-  // For read command, read response payload into data buffer
-  if (cmd == Command::ReadRegister) {
-    for (uint8_t i = 0; i < length; i++) {
-      data[i] = static_cast<uint8_t>(_serial->read());
+  // When reading, save response data into provided buffer.
+  // When writing, just drain the echoed bytes.
+  for (uint8_t i = 0; i < length; i++) {
+    uint8_t b = static_cast<uint8_t>(_serial->read());
+    if (cmd == Command::ReadRegister) {
+      data[i] = b;
     }
   }
 
