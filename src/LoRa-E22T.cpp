@@ -2,35 +2,6 @@
 
 namespace E22 {
 
-// Register layout helpers
-static constexpr uint8_t REG_COUNT_MAIN = 9; // registers 0x00-0x08
-static constexpr uint8_t REG_COUNT_WOR  = 2; // registers 0x09-0x0A
-static constexpr uint8_t REG_COUNT_ALL  = REG_COUNT_MAIN + REG_COUNT_WOR;
-
-// Response header size: command byte + start address + length byte
-static constexpr uint8_t FRAME_HEADER_SIZE = 3;
-
-// Timeout for reading a serial response from the module (ms)
-static constexpr uint16_t SERIAL_RESPONSE_TIMEOUT_MS = 500;
-
-// Extended timeout for wireless config commands (response travels over the air)
-static constexpr uint16_t WIRELESS_RESPONSE_TIMEOUT_MS = 2000;
-
-// RESET pin minimum LOW time per manual (>100us); 1ms is safe on any platform
-static constexpr uint8_t RESET_PULSE_MS = 1;
-
-// Module startup time after reset: 16ms per manual + margin
-static constexpr uint8_t MODULE_STARTUP_MS = 20;
-
-// Delay to wait AUX LOW after sending data to RX pin: 1ms per manual + margin
-static constexpr uint8_t AUX_PIN_DELAY_MS = 2;
-
-// Timeout to wait for AUX to go HIGH after a transaction
-static constexpr uint16_t AUX_TIMEOUT_MS = 500;
-
-// Delay required after changing modes: 9-11ms per manual + margin
-static constexpr uint8_t POST_MODE_CHANGE_DELAY_MS = 20;
-
 // Reads a single register byte, modifies the bits specified by mask/shift, then writes it back.
 static void _applyBits(uint8_t& reg_val, uint8_t value, uint8_t shift, uint8_t mask) {
   reg_val = (reg_val & ~(mask << shift)) | ((value & mask) << shift);
@@ -66,7 +37,7 @@ Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m
     digitalWrite(_pin_reset, HIGH);
   }
 
-  Status status = _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
+  Status status = _waitAuxHigh(true, _POST_MODE_CHANGE_DELAY_MS);
   if (status != Status::Ok) return status;
 
   _initialized = true;
@@ -79,14 +50,14 @@ Status LoRaE22T::reset() {
 
   // Pull RESET LOW for at least 100us, then release
   digitalWrite(_pin_reset, LOW);
-  delay(RESET_PULSE_MS);
+  delay(_RESET_PULSE_MS);
   digitalWrite(_pin_reset, HIGH);
 
   // Wait for module startup (T1 = 16ms typical, with margin)
-  delay(MODULE_STARTUP_MS);
+  delay(_MODULE_STARTUP_MS);
 
   // Wait for AUX to go HIGH, signalling the module is ready
-  return _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
+  return _waitAuxHigh(true, _POST_MODE_CHANGE_DELAY_MS);
 }
 
 Status LoRaE22T::setMode(const Mode mode) {
@@ -116,7 +87,7 @@ Status LoRaE22T::setMode(const Mode mode) {
 
   _current_mode = mode;
 
-  return _waitAuxHigh(true, POST_MODE_CHANGE_DELAY_MS);
+  return _waitAuxHigh(true, _POST_MODE_CHANGE_DELAY_MS);
 }
 
 Status LoRaE22T::getMode(Mode& mode) const {
@@ -165,7 +136,7 @@ Status LoRaE22T::setFactorySettings() {
     channel = 0x12;
   }
 
-  uint8_t data[REG_COUNT_MAIN] = {
+  uint8_t data[_REG_COUNT_MAIN] = {
     0x00,    // ADDH
     0x00,    // ADDL
     0x00,    // NETID
@@ -177,7 +148,7 @@ Status LoRaE22T::setFactorySettings() {
     0x00     // CRYPT_L
   };
 
-  return _writeRegisters(Register::AddrH, REG_COUNT_MAIN, data, true);
+  return _writeRegisters(Register::AddrH, _REG_COUNT_MAIN, data, true);
 }
 
 Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) {
@@ -198,7 +169,7 @@ Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) 
                        (static_cast<uint8_t>(config.wor_mode) << 3) |
                        (static_cast<uint8_t>(config.wor_cycle_time) & 0x07);
 
-  uint8_t data[REG_COUNT_ALL] = {
+  uint8_t data[_REG_COUNT_ALL] = {
     static_cast<uint8_t>(config.address >> 8),
     static_cast<uint8_t>(config.address & 0xFF),
     config.network_id,
@@ -212,7 +183,7 @@ Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) 
     static_cast<uint8_t>(config.wor_delay_ms & 0xFF),
   };
 
-  return _writeRegisters(Register::AddrH, REG_COUNT_ALL, data, persistent);
+  return _writeRegisters(Register::AddrH, _REG_COUNT_ALL, data, persistent);
 }
 
 Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool persistent) {
@@ -235,7 +206,7 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
   const uint8_t cmd_byte = persistent ? static_cast<uint8_t>(Command::SetRegister)
                                       : static_cast<uint8_t>(Command::SetTemporaryRegister);
 
-  uint8_t data[REG_COUNT_ALL] = {
+  uint8_t data[_REG_COUNT_ALL] = {
     static_cast<uint8_t>(config.address >> 8),
     static_cast<uint8_t>(config.address & 0xFF),
     config.network_id,
@@ -258,11 +229,11 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
   _serial->write(static_cast<uint8_t>(0xCF));
   _serial->write(cmd_byte);
   _serial->write(static_cast<uint8_t>(Register::AddrH));
-  _serial->write(static_cast<uint8_t>(REG_COUNT_ALL));
-  _serial->write(data, REG_COUNT_ALL);
+  _serial->write(static_cast<uint8_t>(_REG_COUNT_ALL));
+  _serial->write(data, _REG_COUNT_ALL);
 
   // Response: CF CF C1 <start_addr> <length> <data...>
-  const uint8_t response_size = 2 + FRAME_HEADER_SIZE + REG_COUNT_ALL;
+  const uint8_t response_size = 2 + _FRAME_HEADER_SIZE + _REG_COUNT_ALL;
   const uint32_t start_time   = millis();
 
   size_t available = 0;
@@ -277,7 +248,7 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > WIRELESS_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
@@ -285,7 +256,7 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
   if (prefix1 != 0xCF || prefix2 != 0xCF) return Status::CommandFailed;
 
   // Drain remaining response bytes (header + data)
-  for (uint8_t i = 0; i < FRAME_HEADER_SIZE + REG_COUNT_ALL; i++) {
+  for (uint8_t i = 0; i < _FRAME_HEADER_SIZE + _REG_COUNT_ALL; i++) {
     _serial->read();
   }
 
@@ -526,8 +497,8 @@ Status LoRaE22T::getConfig(LoRaE22TConfig& config) {
   Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
-  uint8_t data[REG_COUNT_ALL] = {};
-  status                      = _readRegisters(Register::AddrH, REG_COUNT_ALL, data);
+  uint8_t data[_REG_COUNT_ALL] = {};
+  status                       = _readRegisters(Register::AddrH, _REG_COUNT_ALL, data);
   if (status != Status::Ok) return status;
 
   config.address    = (static_cast<uint16_t>(data[0]) << 8) | data[1];
@@ -786,6 +757,43 @@ Status LoRaE22T::sendBroadcastFixedData(const uint8_t channel, const uint8_t* da
   return _waitAuxHigh();
 }
 
+Status LoRaE22T::sendWORTransparentData(const uint8_t* data, const size_t data_size) {
+  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkMode(Mode::WakeOnRadio);
+  if (status != Status::Ok) return status;
+
+  _serial->write(data, data_size);
+  return _waitAuxHigh(true, 0, _AUX_WOR_TIMEOUT_MS);
+}
+
+Status LoRaE22T::sendWORFixedData(const uint16_t address, const uint8_t channel,
+  const uint8_t* data, const size_t data_size) {
+  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkMode(Mode::WakeOnRadio);
+  if (status != Status::Ok) return status;
+
+  // Frame: ADDH + ADDL + CH + data
+  _serial->write(static_cast<uint8_t>(address >> 8));
+  _serial->write(static_cast<uint8_t>(address & 0xFF));
+  _serial->write(channel);
+  _serial->write(data, data_size);
+  return _waitAuxHigh(true, 0, _AUX_WOR_TIMEOUT_MS);
+}
+
+Status LoRaE22T::sendWORBroadcastFixedData(const uint8_t channel, const uint8_t* data,
+  const size_t data_size) {
+  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkMode(Mode::WakeOnRadio);
+  if (status != Status::Ok) return status;
+
+  // Broadcast address is 0xFFFF
+  _serial->write(static_cast<uint8_t>(0xFF));
+  _serial->write(static_cast<uint8_t>(0xFF));
+  _serial->write(channel);
+  _serial->write(data, data_size);
+  return _waitAuxHigh(true, 0, _AUX_WOR_TIMEOUT_MS);
+}
+
 bool LoRaE22T::isDataAvailable() const {
   if (!_initialized) return false;
   return _serial->available() > 0;
@@ -857,7 +865,7 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > SERIAL_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
   }
 
   const uint8_t resp_cmd  = static_cast<uint8_t>(_serial->read());
@@ -876,13 +884,14 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
 
 /* --------------------------------------- Private methods -------------------------------------- */
 
-Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms) {
+Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms,
+  const uint16_t timeout_ms) {
   const uint32_t start_time = millis();
 
-  if (pre_delay) delay(AUX_PIN_DELAY_MS);
+  if (pre_delay) delay(_AUX_PIN_DELAY_MS);
 
   while (digitalRead(_aux) == LOW) {
-    if (millis() - start_time > AUX_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - start_time > timeout_ms) return Status::AuxTimeout;
   }
 
   if (post_delay_ms > 0) delay(post_delay_ms);
@@ -891,7 +900,7 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms)
   // Configuration mode to another mode
   const uint32_t secondary_start = millis();
   while (digitalRead(_aux) == LOW) {
-    if (millis() - secondary_start > AUX_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - secondary_start > timeout_ms) return Status::AuxTimeout;
   }
 
   return Status::Ok;
@@ -918,7 +927,7 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
   }
 
   // Wait for response: header (3 bytes) + data (length bytes)
-  const size_t response_size = FRAME_HEADER_SIZE + length;
+  const size_t response_size = _FRAME_HEADER_SIZE + length;
   const uint32_t start_time  = millis();
 
   size_t available = 0;
@@ -933,7 +942,7 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > SERIAL_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
   }
 
   // Read and validate response header

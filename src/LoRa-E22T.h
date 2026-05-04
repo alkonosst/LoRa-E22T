@@ -467,6 +467,45 @@ class LoRaE22T {
   Status sendBroadcastFixedData(const uint8_t channel, const uint8_t* data, const size_t data_size);
 
   /**
+   * @brief Send data in WOR transparent mode, which automatically handles the WOR timing.
+   * @param data Pointer to the data buffer to send.
+   * @param data_size Number of bytes to send.
+   * @return `Status::Ok` if success, error status otherwise.
+   *
+   * @note Requires module to be in `TxMode::Transparent` mode and WOR mode to be set to
+   * `WORMode::Transmitter`.
+   */
+  Status sendWORTransparentData(const uint8_t* data, const size_t data_size);
+
+  /**
+   * @brief Send data in WOR fixed mode, which automatically handles the WOR timing.
+   * @param address Destination 16-bit module address.
+   * @param channel Destination RF channel.
+   * @param data Pointer to the data buffer to send.
+   * @param data_size Number of bytes to send.
+   * @return `Status::Ok` if success, error status otherwise.
+   *
+   * @note Requires module to be in `TxMode::Fixed` mode and WOR mode to be set to
+   * `WORMode::Transmitter`.
+   */
+  Status sendWORFixedData(const uint16_t address, const uint8_t channel, const uint8_t* data,
+    const size_t data_size);
+
+  /**
+   * @brief Broadcast data to all modules on a given channel in WOR fixed mode, which automatically
+   * handles the WOR timing.
+   * @param channel Destination RF channel.
+   * @param data Pointer to the data buffer to send.
+   * @param data_size Number of bytes to send.
+   * @return `Status::Ok` if success, error status otherwise.
+   *
+   * @note Requires module to be in `TxMode::Fixed` mode and WOR mode to be set to
+   * `WORMode::Transmitter`.
+   */
+  Status sendWORBroadcastFixedData(const uint8_t channel, const uint8_t* data,
+    const size_t data_size);
+
+  /**
    * @brief Check if data is available to read from the module.
    * @return true if data is available, false otherwise.
    */
@@ -519,8 +558,41 @@ class LoRaE22T {
     SetTemporaryRegister = 0xC2,
   };
 
+  // Register layout helpers
+  static constexpr uint8_t _REG_COUNT_MAIN = 9; // registers 0x00-0x08
+  static constexpr uint8_t _REG_COUNT_WOR  = 2; // registers 0x09-0x0A
+  static constexpr uint8_t _REG_COUNT_ALL  = _REG_COUNT_MAIN + _REG_COUNT_WOR;
+
+  // Response header size: command byte + start address + length byte
+  static constexpr uint8_t _FRAME_HEADER_SIZE = 3;
+
+  // Timeout for reading a serial response from the module (ms)
+  static constexpr uint16_t _SERIAL_RESPONSE_TIMEOUT_MS = 500;
+
+  // Extended timeout for wireless config commands (response travels over the air)
+  static constexpr uint16_t _WIRELESS_RESPONSE_TIMEOUT_MS = 2000;
+
+  // RESET pin minimum LOW time per manual (>100us); 1ms is safe on any platform
+  static constexpr uint8_t _RESET_PULSE_MS = 1;
+
+  // Module startup time after reset: 16ms per manual + margin
+  static constexpr uint8_t _MODULE_STARTUP_MS = 20;
+
+  // Delay to wait AUX LOW after sending data to RX pin: 1ms per manual + margin
+  static constexpr uint8_t _AUX_PIN_DELAY_MS = 2;
+
+  // Timeout to wait for AUX to go HIGH after a transaction
+  static constexpr uint16_t _AUX_TIMEOUT_MS = 500;
+
+  // Longer timeout for WOR transactions due to timing requirements
+  static constexpr uint16_t _AUX_WOR_TIMEOUT_MS = 6000;
+
+  // Delay required after changing modes: 9-11ms per manual + margin
+  static constexpr uint8_t _POST_MODE_CHANGE_DELAY_MS = 20;
+
   // Wait for AUX pin to go HIGH, indicating the module is ready for the next command
-  Status _waitAuxHigh(const bool pre_delay = true, const uint8_t post_delay_ms = 0);
+  Status _waitAuxHigh(const bool pre_delay = true, const uint8_t post_delay_ms = 0,
+    const uint16_t timeout_ms = _AUX_TIMEOUT_MS);
 
   // Check if the module is in the required mode
   Status _checkMode(const Mode required_mode);
