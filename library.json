@@ -1,0 +1,17 @@
+{
+  "name": "LoRa-E22T",
+  "version": "0.1.0",
+  "authors": {
+    "name": "Maximiliano Ramirez",
+    "email": "maximiliano.ramirezbravo@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alkonosst/LoRa-E22T.git"
+  },
+  "description": "Arduino library for EByte E22-T series LoRa modules (SX1262/SX1268). Supports all six E22-T variants across 230/400/900 MHz bands at 22/30 dBm. Provides full configuration API, Transparent and Fixed addressing, Wake-on-Radio, hardware encryption, and RSSI reporting. All operations return typed status codes for straightforward error handling.",
+  "keywords": "lora, ebyte, e22, sx1262, sx1268, radio, wireless, uart, communication, iot, antenna, rssi, long range, low power, ism, sub ghz, dbm, frequency",
+  "license": "MIT",
+  "frameworks": "arduino",
+  "headers": ["LoRa-E22T.h"]
+}
