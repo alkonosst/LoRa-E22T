@@ -183,8 +183,8 @@ struct LoRaE22TConfig {
   X(AuxTimeout)         \
   X(SerialTimeout)      \
   X(WrongMode)          \
-  X(InvalidParameter)   \
   X(WrongModel)         \
+  X(InvalidParameter)   \
   X(CommandFailed)      \
   X(BufferTooSmall)
 
