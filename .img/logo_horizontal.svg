@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 180" width="460" height="180">
+
+  <defs>
+    <linearGradient id="antGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#BBEEFF"/>
+      <stop offset="22%"  stop-color="#00D4FF"/>
+      <stop offset="65%"  stop-color="#009EC4"/>
+      <stop offset="100%" stop-color="#003D55"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="460" height="180" fill="#0D1117" rx="16"/>
+
+  <!-- Expanding waves from tip (105, 38).
+       r max=30 -> extremes: left=75, right=135, top=8, bottom=68. All inside 460x180. -->
+  <circle cx="105" cy="38" r="8" fill="none" stroke="#00D4FF" stroke-width="1.8">
+    <animate attributeName="r"       from="8"    to="30"  dur="2.4s" begin="0.0s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" from="0.85"  to="0"   dur="2.4s" begin="0.0s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="105" cy="38" r="8" fill="none" stroke="#00D4FF" stroke-width="1.8">
+    <animate attributeName="r"       from="8"    to="30"  dur="2.4s" begin="0.6s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" from="0.85"  to="0"   dur="2.4s" begin="0.6s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="105" cy="38" r="8" fill="none" stroke="#00D4FF" stroke-width="1.8">
+    <animate attributeName="r"       from="8"    to="30"  dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" from="0.85"  to="0"   dur="2.4s" begin="1.2s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="105" cy="38" r="8" fill="none" stroke="#00D4FF" stroke-width="1.8">
+    <animate attributeName="r"       from="8"    to="30"  dur="2.4s" begin="1.8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" from="0.85"  to="0"   dur="2.4s" begin="1.8s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Antenna rod: tip at y=40, bottom at y=138 -->
+  <rect x="101" y="40" width="8" height="98" rx="4" fill="url(#antGrad)"/>
+  <!-- Highlight stripe -->
+  <rect x="102.5" y="42" width="2" height="94" rx="1" fill="white" opacity="0.2"/>
+
+  <!-- Feed connector -->
+  <rect x="98"  y="138" width="14" height="12" rx="3" fill="url(#antGrad)"/>
+
+  <!-- Ground plane -->
+  <rect x="62"  y="150" width="86" height="7" rx="3" fill="#00D4FF" opacity="0.72"/>
+  <rect x="64"  y="150" width="82" height="2" rx="1" fill="white"   opacity="0.14"/>
+
+  <!-- Tip dot -->
+  <circle cx="105" cy="38" r="4.5" fill="#00D4FF">
+    <animate attributeName="opacity" values="1;0.3;1" dur="2.4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Vertical divider -->
+  <line x1="216" y1="24" x2="216" y2="156" stroke="#1A3D50" stroke-width="1"/>
+
+  <!-- Text: left-aligned at x=236 -->
+  <text x="236" y="82"
+    font-family="Consolas,'Courier New',monospace"
+    font-size="46" font-weight="700"
+    fill="#00D4FF" letter-spacing="2">LoRa</text>
+
+  <text x="238" y="116"
+    font-family="Consolas,'Courier New',monospace"
+    font-size="19"
+    fill="#2A8FAA" letter-spacing="2">E22-T Series</text>
+
+  <text x="238" y="140"
+    font-family="Consolas,'Courier New',monospace"
+    font-size="11"
+    fill="#1A4A5A" letter-spacing="4">Arduino Library</text>
+
+</svg>
