@@ -188,7 +188,7 @@ Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) 
 
 Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool persistent) {
   if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Transmission);
+  Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
   const uint8_t reg0 = (static_cast<uint8_t>(config.baud_rate) << 5) |
