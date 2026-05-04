@@ -298,6 +298,10 @@ Status LoRaE22T::setUARTConfig(const UARTBaudRate baud_rate, const UARTParity pa
 
 Status LoRaE22T::setAirDataRate230(const AirDataRate230 rate, const bool persistent) {
   if (!_initialized) return Status::Uninitialized;
+
+  bool is_230MHz = (_model == Model::E22_230T22 || _model == Model::E22_230T30);
+  if (!is_230MHz) return Status::WrongModel;
+
   Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
@@ -311,6 +315,11 @@ Status LoRaE22T::setAirDataRate230(const AirDataRate230 rate, const bool persist
 
 Status LoRaE22T::setAirDataRate400_900(const AirDataRate400_900 rate, const bool persistent) {
   if (!_initialized) return Status::Uninitialized;
+
+  bool is_400_900MHz = (_model == Model::E22_400T22 || _model == Model::E22_400T30 ||
+                        _model == Model::E22_900T22 || _model == Model::E22_900T30);
+  if (!is_400_900MHz) return Status::WrongModel;
+
   Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
@@ -350,6 +359,11 @@ Status LoRaE22T::setAmbientRSSI(const bool enable, const bool persistent) {
 
 Status LoRaE22T::setTransmissionPower22dBm(const TxPower22dBm power, const bool persistent) {
   if (!_initialized) return Status::Uninitialized;
+
+  bool is_22dBm =
+    (_model == Model::E22_230T22 || _model == Model::E22_400T22 || _model == Model::E22_900T22);
+  if (!is_22dBm) return Status::WrongModel;
+
   Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
@@ -363,6 +377,11 @@ Status LoRaE22T::setTransmissionPower22dBm(const TxPower22dBm power, const bool 
 
 Status LoRaE22T::setTransmissionPower30dBm(const TxPower30dBm power, const bool persistent) {
   if (!_initialized) return Status::Uninitialized;
+
+  bool is_30dBm =
+    (_model == Model::E22_230T30 || _model == Model::E22_400T30 || _model == Model::E22_900T30);
+  if (!is_30dBm) return Status::WrongModel;
+
   Status status = _checkMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
