@@ -1,3 +1,9 @@
+/**
+ * SPDX-FileCopyrightText: 2026 Maximiliano Ramirez <maximiliano.ramirezbravo@gmail.com>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #pragma once
 
 #ifdef ESP32
