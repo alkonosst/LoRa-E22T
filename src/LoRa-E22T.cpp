@@ -224,7 +224,7 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
   while (_serial->available())
     _serial->read();
 
-  // Wireless config frame: CF CF <cmd> <start_addr> <length> <data...>
+  // Wireless set config frame: CF CF <cmd> <start_addr> <length> <data...>
   _serial->write(static_cast<uint8_t>(0xCF));
   _serial->write(static_cast<uint8_t>(0xCF));
   _serial->write(cmd_byte);
@@ -248,7 +248,7 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
@@ -520,35 +520,62 @@ Status LoRaE22T::getConfig(LoRaE22TConfig& config) {
   status                       = _readRegisters(Register::AddrH, _REG_COUNT_ALL, data);
   if (status != Status::Ok) return status;
 
-  config.address    = (static_cast<uint16_t>(data[0]) << 8) | data[1];
-  config.network_id = data[2];
+  return _parseConfig(config, data, sizeof(data));
+}
 
-  const uint8_t reg0   = data[3];
-  config.baud_rate     = static_cast<UARTBaudRate>((reg0 >> 5) & 0x07);
-  config.parity        = static_cast<UARTParity>((reg0 >> 3) & 0x03);
-  config.air_data_rate = reg0 & 0x07;
+Status LoRaE22T::getWirelessConfig(LoRaE22TConfig& config) {
+  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkMode(Mode::Configuration);
+  if (status != Status::Ok) return status;
 
-  const uint8_t reg1        = data[4];
-  config.subpacket_length   = static_cast<SubpacketLength>((reg1 >> 6) & 0x03);
-  config.rssi_ambient       = (reg1 >> 5) & 0x01;
-  config.transmission_power = reg1 & 0x03;
+  // Flush stale bytes before sending
+  while (_serial->available())
+    _serial->read();
 
-  config.channel = data[5];
+  // Wireless read config frame: CF CF <cmd> <start_addr> <length>
+  const uint8_t request[] = {0xCF,
+    0xCF,
+    static_cast<uint8_t>(Command::ReadRegister),
+    0x00,
+    static_cast<uint8_t>(_REG_COUNT_ALL)};
 
-  const uint8_t reg3    = data[6];
-  config.rssi_packet    = (reg3 >> 7) & 0x01;
-  config.tx_mode        = static_cast<TxMode>((reg3 >> 6) & 0x01);
-  config.relay_enabled  = (reg3 >> 5) & 0x01;
-  config.lbt_enabled    = (reg3 >> 4) & 0x01;
-  config.wor_mode       = static_cast<WORMode>((reg3 >> 3) & 0x01);
-  config.wor_cycle_time = static_cast<WORCycleTime>(reg3 & 0x07);
+  _serial->write(request, sizeof(request));
 
-  // encryption_key is write-only; reads always return 0
-  config.encryption_key = 0;
+  // Response: CF CF C1 <start_addr> <length> <data...>
+  const uint8_t response_size = 2 + _FRAME_HEADER_SIZE + _REG_COUNT_ALL;
+  const uint32_t start_time   = millis();
 
-  config.wor_delay_ms = (static_cast<uint16_t>(data[9]) << 8) | data[10];
+  size_t available = 0;
+  while (available < response_size) {
+    available = _serial->available();
 
-  return Status::Ok;
+    // Early exit if module responds with error response (0xFF 0xFF 0xFF)
+    if (available >= 3 && static_cast<uint8_t>(_serial->peek()) == 0xFF) {
+      _serial->read();
+      _serial->read();
+      _serial->read();
+      return Status::CommandFailed;
+    }
+
+    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+  }
+
+  const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
+  const uint8_t prefix2 = static_cast<uint8_t>(_serial->read());
+  if (prefix1 != 0xCF || prefix2 != 0xCF) return Status::CommandFailed;
+
+  // Drain header bytes
+  _serial->read(); // cmd byte
+  _serial->read(); // start addr
+  _serial->read(); // length
+
+  // Save data bytes for parsing
+  uint8_t data[_REG_COUNT_ALL] = {};
+  for (uint8_t i = 0; i < _REG_COUNT_ALL; i++) {
+    data[i] = static_cast<uint8_t>(_serial->read());
+  }
+
+  return _parseConfig(config, data, sizeof(data));
 }
 
 Status LoRaE22T::getAddress(uint16_t& address) {
@@ -884,7 +911,7 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::AuxTimeout;
+    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
   }
 
   const uint8_t resp_cmd  = static_cast<uint8_t>(_serial->read());
@@ -996,6 +1023,40 @@ Status LoRaE22T::_writeRegisters(const Register reg_start, const uint8_t length,
   const bool persistent) {
   Command cmd = persistent ? Command::SetRegister : Command::SetTemporaryRegister;
   return _sendCmd(cmd, reg_start, length, data);
+}
+
+Status LoRaE22T::_parseConfig(LoRaE22TConfig& config, const uint8_t* data, const size_t length) {
+  if (data == nullptr || length < _REG_COUNT_ALL) return Status::InvalidParameter;
+
+  config.address    = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+  config.network_id = data[2];
+
+  const uint8_t reg0   = data[3];
+  config.baud_rate     = static_cast<UARTBaudRate>((reg0 >> 5) & 0x07);
+  config.parity        = static_cast<UARTParity>((reg0 >> 3) & 0x03);
+  config.air_data_rate = reg0 & 0x07;
+
+  const uint8_t reg1        = data[4];
+  config.subpacket_length   = static_cast<SubpacketLength>((reg1 >> 6) & 0x03);
+  config.rssi_ambient       = (reg1 >> 5) & 0x01;
+  config.transmission_power = reg1 & 0x03;
+
+  config.channel = data[5];
+
+  const uint8_t reg3    = data[6];
+  config.rssi_packet    = (reg3 >> 7) & 0x01;
+  config.tx_mode        = static_cast<TxMode>((reg3 >> 6) & 0x01);
+  config.relay_enabled  = (reg3 >> 5) & 0x01;
+  config.lbt_enabled    = (reg3 >> 4) & 0x01;
+  config.wor_mode       = static_cast<WORMode>((reg3 >> 3) & 0x01);
+  config.wor_cycle_time = static_cast<WORCycleTime>(reg3 & 0x07);
+
+  // encryption_key is write-only; reads always return 0
+  config.encryption_key = 0;
+
+  config.wor_delay_ms = (static_cast<uint16_t>(data[9]) << 8) | data[10];
+
+  return Status::Ok;
 }
 
 /* -------------------------------------------- Extra ------------------------------------------- */

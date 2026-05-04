@@ -80,7 +80,8 @@ class LoRaE22T {
   Status setConfig(const LoRaE22TConfig& config, const bool persistent = false);
 
   /**
-   * @brief Send a wireless configuration command to a remote module over-the-air.
+   * @brief Send a wireless configuration command to a remote module over-the-air. This module must
+   * match the destination address, channel and network ID of the target module.
    * @param config `LoRaE22TConfig` instance containing the configuration values to send.
    * @param persistent Save to flash on the remote if true, temporary until reset if false.
    * @return `Status::Ok` if success, error status otherwise.
@@ -289,6 +290,16 @@ class LoRaE22T {
   Status getConfig(LoRaE22TConfig& config);
 
   /**
+   * @brief Request the current configuration of a remote module over-the-air. This module must
+   * match the destination address, channel and network ID of the target module.
+   * @param config `LoRaE22TConfig` instance to hold the read configuration values.
+   * @return `Status::Ok` if success, error status otherwise.
+   *
+   * @note Requires module to be in `Mode::Configuration` mode.
+   */
+  Status getWirelessConfig(LoRaE22TConfig& config);
+
+  /**
    * @brief Get the 16-bit address of the module.
    * @param address Output parameter for the module address.
    * @return `Status::Ok` if success, error status otherwise.
@@ -298,7 +309,7 @@ class LoRaE22T {
   Status getAddress(uint16_t& address);
 
   /**
-   * @brief Get the network ID of the module.
+   * @brief Get the network ID of the module. Modules on the same network must share this value.
    * @param network_id Output parameter for the network ID byte.
    * @return `Status::Ok` if success, error status otherwise.
    *
@@ -606,6 +617,9 @@ class LoRaE22T {
   // Write a sequence of registers starting from reg_start with the provided data buffer
   Status _writeRegisters(const Register reg_start, const uint8_t length, uint8_t* data,
     const bool persistent);
+
+  // Fill a LoRaE22TConfig struct from a raw register data buffer
+  Status _parseConfig(LoRaE22TConfig& config, const uint8_t* data, const size_t length);
 };
 
 } // namespace E22
