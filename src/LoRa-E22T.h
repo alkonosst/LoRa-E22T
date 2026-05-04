@@ -605,8 +605,14 @@ class LoRaE22T {
   Status _waitAuxHigh(const bool pre_delay = true, const uint8_t post_delay_ms = 0,
     const uint16_t timeout_ms = _AUX_TIMEOUT_MS);
 
+  // Check if the module has been initialized before performing operations
+  Status _checkInitialized() const;
+
   // Check if the module is in the required mode
   Status _checkMode(const Mode required_mode);
+
+  // Check if the module is initialized and in the required mode
+  Status _checkInitAndMode(const Mode required_mode);
 
   // Send a command to the module with the given parameters and read the response
   Status _sendCmd(const Command cmd, const Register reg_start, const uint8_t length, uint8_t* data);

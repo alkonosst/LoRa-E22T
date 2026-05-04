@@ -1,4 +1,5 @@
 #include "LoRa-E22T.h"
+#include "LoRa-E22T-Logs.h"
 
 namespace E22 {
 
@@ -11,10 +12,22 @@ static void _applyBits(uint8_t& reg_val, uint8_t value, uint8_t shift, uint8_t m
 
 Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m0, const int8_t m1,
   const int8_t aux, const int8_t pin_reset) {
-  if (_initialized) return Status::AlreadyInitialized;
+  LORA_E22T_LOGI("Initializing module...");
 
-  if (model == Model::None) return Status::ModelNotSet;
-  if (m0 == -1 || m1 == -1 || aux == -1) return Status::PinsNotSet;
+  if (_initialized) {
+    LORA_E22T_LOGE("Module already initialized!");
+    return Status::AlreadyInitialized;
+  }
+
+  if (model == Model::None) {
+    LORA_E22T_LOGE("Model not set!");
+    return Status::ModelNotSet;
+  }
+
+  if (m0 == -1 || m1 == -1 || aux == -1) {
+    LORA_E22T_LOGE("Pins not set!");
+    return Status::PinsNotSet;
+  }
 
   _model     = model;
   _serial    = &serial;
@@ -41,12 +54,21 @@ Status LoRaE22T::begin(const Model model, HardwareSerial& serial, const int8_t m
   if (status != Status::Ok) return status;
 
   _initialized = true;
+  LORA_E22T_LOGI("Module initialized successfully");
+
   return Status::Ok;
 }
 
 Status LoRaE22T::reset() {
-  if (!_initialized) return Status::Uninitialized;
-  if (_pin_reset == -1) return Status::PinsNotSet;
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
+
+  if (_pin_reset == -1) {
+    LORA_E22T_LOGE("Reset pin not set, cannot reset module!");
+    return Status::PinsNotSet;
+  }
+
+  LORA_E22T_LOGI("Resetting module...");
 
   // Pull RESET LOW for at least 100us, then release
   digitalWrite(_pin_reset, LOW);
@@ -57,31 +79,38 @@ Status LoRaE22T::reset() {
   delay(_MODULE_STARTUP_MS);
 
   // Wait for AUX to go HIGH, signalling the module is ready
-  return _waitAuxHigh(true, _POST_MODE_CHANGE_DELAY_MS);
+  status = _waitAuxHigh(true, _POST_MODE_CHANGE_DELAY_MS);
+  if (status == Status::Ok) LORA_E22T_LOGI("Module reset complete");
+  return status;
 }
 
 Status LoRaE22T::setMode(const Mode mode) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
 
   switch (mode) {
     case Mode::Transmission:
       digitalWrite(_m0, LOW);
       digitalWrite(_m1, LOW);
+      LORA_E22T_LOGD("Switched to Transmission mode");
       break;
 
     case Mode::WakeOnRadio:
       digitalWrite(_m0, HIGH);
       digitalWrite(_m1, LOW);
+      LORA_E22T_LOGD("Switched to WakeOnRadio mode");
       break;
 
     case Mode::Configuration:
       digitalWrite(_m0, LOW);
       digitalWrite(_m1, HIGH);
+      LORA_E22T_LOGD("Switched to Configuration mode");
       break;
 
     case Mode::DeepSleep:
       digitalWrite(_m0, HIGH);
       digitalWrite(_m1, HIGH);
+      LORA_E22T_LOGD("Switched to DeepSleep mode");
       break;
   }
 
@@ -91,7 +120,9 @@ Status LoRaE22T::setMode(const Mode mode) {
 }
 
 Status LoRaE22T::getMode(Mode& mode) const {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
+
   mode = _current_mode;
   return Status::Ok;
 }
@@ -99,9 +130,7 @@ Status LoRaE22T::getMode(Mode& mode) const {
 /* ------------------------------------ Configuration setters ----------------------------------- */
 
 Status LoRaE22T::setFactorySettings() {
-  if (!_initialized) return Status::Uninitialized;
-
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
   /**
@@ -121,6 +150,8 @@ Status LoRaE22T::setFactorySettings() {
    * - 400MHz: Channel 0x17 (ch 23 - 433.125MHz)
    * - 900MHz: Channel 0x12 (ch 18 - 868.125MHz)
    */
+
+  LORA_E22T_LOGI("Restoring factory settings...");
 
   uint8_t reg0    = 0;
   uint8_t channel = 0;
@@ -148,14 +179,16 @@ Status LoRaE22T::setFactorySettings() {
     0x00     // CRYPT_L
   };
 
-  return _writeRegisters(Register::AddrH, _REG_COUNT_MAIN, data, true);
+  status = _writeRegisters(Register::AddrH, _REG_COUNT_MAIN, data, true);
+  if (status == Status::Ok) LORA_E22T_LOGI("Factory settings restored successfully");
+  return status;
 }
 
 Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting config (persistent=%d)...", persistent);
 
   const uint8_t reg0 = (static_cast<uint8_t>(config.baud_rate) << 5) |
                        (static_cast<uint8_t>(config.parity) << 3) | (config.air_data_rate & 0x07);
@@ -183,13 +216,16 @@ Status LoRaE22T::setConfig(const LoRaE22TConfig& config, const bool persistent) 
     static_cast<uint8_t>(config.wor_delay_ms & 0xFF),
   };
 
-  return _writeRegisters(Register::AddrH, _REG_COUNT_ALL, data, persistent);
+  status = _writeRegisters(Register::AddrH, _REG_COUNT_ALL, data, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Config set successfully");
+  return status;
 }
 
 Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting wireless config (persistent=%d)...", persistent);
 
   const uint8_t reg0 = (static_cast<uint8_t>(config.baud_rate) << 5) |
                        (static_cast<uint8_t>(config.parity) << 3) | (config.air_data_rate & 0x07);
@@ -224,6 +260,8 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
   while (_serial->available())
     _serial->read();
 
+  LORA_E22T_HEXV(data, _REG_COUNT_ALL);
+
   // Wireless set config frame: CF CF <cmd> <start_addr> <length> <data...>
   _serial->write(static_cast<uint8_t>(0xCF));
   _serial->write(static_cast<uint8_t>(0xCF));
@@ -245,47 +283,63 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
       _serial->read();
       _serial->read();
       _serial->read();
+      LORA_E22T_LOGE("setWirelessConfig: module returned error response");
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) {
+      LORA_E22T_LOGE("setWirelessConfig: serial timeout waiting for response");
+      return Status::SerialTimeout;
+    }
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
   const uint8_t prefix2 = static_cast<uint8_t>(_serial->read());
-  if (prefix1 != 0xCF || prefix2 != 0xCF) return Status::CommandFailed;
+  if (prefix1 != 0xCF || prefix2 != 0xCF) {
+    LORA_E22T_LOGE("setWirelessConfig: invalid response prefix 0x%02X 0x%02X", prefix1, prefix2);
+    return Status::CommandFailed;
+  }
 
   // Drain remaining response bytes (header + data)
   for (uint8_t i = 0; i < _FRAME_HEADER_SIZE + _REG_COUNT_ALL; i++) {
     _serial->read();
   }
 
-  return _waitAuxHigh();
+  status = _waitAuxHigh();
+  if (status == Status::Ok) LORA_E22T_LOGI("Wireless config set successfully");
+  return status;
 }
 
 Status LoRaE22T::setAddress(const uint16_t address, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting address to 0x%04X (persistent=%d)...", address, persistent);
 
   uint8_t data[2] = {static_cast<uint8_t>(address >> 8), static_cast<uint8_t>(address & 0xFF)};
 
-  return _writeRegisters(Register::AddrH, 2, data, persistent);
+  status = _writeRegisters(Register::AddrH, 2, data, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Address set successfully");
+  return status;
 }
 
 Status LoRaE22T::setNetworkID(uint8_t network_id, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
-  return _writeRegisters(Register::NetID, 1, &network_id, persistent);
+  LORA_E22T_LOGI("Setting network ID to 0x%02X (persistent=%d)...", network_id, persistent);
+
+  status = _writeRegisters(Register::NetID, 1, &network_id, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Network ID set successfully");
+  return status;
 }
 
 Status LoRaE22T::setUARTConfig(const UARTBaudRate baud_rate, const UARTParity parity,
   const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting UART config (persistent=%d)...", persistent);
 
   uint8_t reg0 = 0;
   status       = _sendCmd(Command::ReadRegister, Register::Reg0, 1, &reg0);
@@ -293,240 +347,331 @@ Status LoRaE22T::setUARTConfig(const UARTBaudRate baud_rate, const UARTParity pa
 
   _applyBits(reg0, static_cast<uint8_t>(baud_rate), 5, 0x07);
   _applyBits(reg0, static_cast<uint8_t>(parity), 3, 0x03);
-  return _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+
+  status = _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("UART config set successfully");
+  return status;
 }
 
 Status LoRaE22T::setAirDataRate230(const AirDataRate230 rate, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitAndMode(Mode::Configuration);
+  if (status != Status::Ok) return status;
 
   bool is_230MHz = (_model == Model::E22_230T22 || _model == Model::E22_230T30);
-  if (!is_230MHz) return Status::WrongModel;
+  if (!is_230MHz) {
+    LORA_E22T_LOGE("setAirDataRate230: not a 230 MHz model");
+    return Status::WrongModel;
+  }
 
-  Status status = _checkMode(Mode::Configuration);
-  if (status != Status::Ok) return status;
+  LORA_E22T_LOGI("Setting air data rate for 230 MHz (persistent=%d)...", persistent);
 
   uint8_t reg0 = 0;
   status       = _readRegisters(Register::Reg0, 1, &reg0);
   if (status != Status::Ok) return status;
 
   _applyBits(reg0, static_cast<uint8_t>(rate), 0, 0x07);
-  return _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+
+  status = _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Air data rate for 230 MHz set successfully");
+  return status;
 }
 
 Status LoRaE22T::setAirDataRate400_900(const AirDataRate400_900 rate, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitAndMode(Mode::Configuration);
+  if (status != Status::Ok) return status;
 
   bool is_400_900MHz = (_model == Model::E22_400T22 || _model == Model::E22_400T30 ||
                         _model == Model::E22_900T22 || _model == Model::E22_900T30);
-  if (!is_400_900MHz) return Status::WrongModel;
+  if (!is_400_900MHz) {
+    LORA_E22T_LOGE("setAirDataRate400_900: not a 400/900 MHz model");
+    return Status::WrongModel;
+  }
 
-  Status status = _checkMode(Mode::Configuration);
-  if (status != Status::Ok) return status;
+  LORA_E22T_LOGI("Setting air data rate for 400/900 MHz (persistent=%d)...", persistent);
 
   uint8_t reg0 = 0;
   status       = _readRegisters(Register::Reg0, 1, &reg0);
   if (status != Status::Ok) return status;
 
   _applyBits(reg0, static_cast<uint8_t>(rate), 0, 0x07);
-  return _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+
+  status = _writeRegisters(Register::Reg0, 1, &reg0, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Air data rate for 400/900 MHz set successfully");
+  return status;
 }
 
 Status LoRaE22T::setSubpacketLength(const SubpacketLength subpacket_length, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting subpacket length (persistent=%d)...", persistent);
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   _applyBits(reg1, static_cast<uint8_t>(subpacket_length), 6, 0x03);
-  return _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+
+  status = _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Subpacket length set successfully");
+  return status;
 }
 
 Status LoRaE22T::setAmbientRSSI(const bool enable, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("%s ambient RSSI (persistent=%d)...",
+    enable ? "Enabling" : "Disabling",
+    persistent);
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   _applyBits(reg1, enable ? 1 : 0, 5, 0x01);
-  return _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+
+  status = _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Ambient RSSI set successfully");
+  return status;
 }
 
 Status LoRaE22T::setTransmissionPower22dBm(const TxPower22dBm power, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitAndMode(Mode::Configuration);
+  if (status != Status::Ok) return status;
 
   bool is_22dBm =
     (_model == Model::E22_230T22 || _model == Model::E22_400T22 || _model == Model::E22_900T22);
-  if (!is_22dBm) return Status::WrongModel;
+  if (!is_22dBm) {
+    LORA_E22T_LOGE("setTransmissionPower22dBm: not a 22 dBm model");
+    return Status::WrongModel;
+  }
 
-  Status status = _checkMode(Mode::Configuration);
-  if (status != Status::Ok) return status;
+  LORA_E22T_LOGI("Setting tx power for 22 dBm (persistent=%d)...", persistent);
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   _applyBits(reg1, static_cast<uint8_t>(power), 0, 0x03);
-  return _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+
+  status = _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Tx power for 22 dBm set successfully");
+  return status;
 }
 
 Status LoRaE22T::setTransmissionPower30dBm(const TxPower30dBm power, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitAndMode(Mode::Configuration);
+  if (status != Status::Ok) return status;
 
   bool is_30dBm =
     (_model == Model::E22_230T30 || _model == Model::E22_400T30 || _model == Model::E22_900T30);
-  if (!is_30dBm) return Status::WrongModel;
+  if (!is_30dBm) {
+    LORA_E22T_LOGE("setTransmissionPower30dBm: not a 30 dBm model");
+    return Status::WrongModel;
+  }
 
-  Status status = _checkMode(Mode::Configuration);
-  if (status != Status::Ok) return status;
+  LORA_E22T_LOGI("Setting tx power for 30 dBm (persistent=%d)...", persistent);
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   _applyBits(reg1, static_cast<uint8_t>(power), 0, 0x03);
-  return _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+
+  status = _writeRegisters(Register::Reg1, 1, &reg1, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Tx power for 30 dBm set successfully");
+  return status;
 }
 
 Status LoRaE22T::setChannel(uint8_t channel, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-
-  if (_model == Model::E22_230T22 || _model == Model::E22_230T30) {
-    if (channel > 64) return Status::InvalidParameter; // 0-64 for 230MHz
-  } else if (_model == Model::E22_400T22 || _model == Model::E22_400T30) {
-    if (channel > 83) return Status::InvalidParameter; // 0-83 for 400MHz
-  } else if (_model == Model::E22_900T22 || _model == Model::E22_900T30) {
-    if (channel > 80) return Status::InvalidParameter; // 0-80 for 900MHz
-  }
-
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
-  return _writeRegisters(Register::Reg2, 1, &channel, persistent);
+  if (_model == Model::E22_230T22 || _model == Model::E22_230T30) {
+    if (channel > 64) {
+      LORA_E22T_LOGE("setChannel: channel %u out of range (max 64 for 230 MHz)", channel);
+      return Status::InvalidParameter;
+    }
+  } else if (_model == Model::E22_400T22 || _model == Model::E22_400T30) {
+    if (channel > 83) {
+      LORA_E22T_LOGE("setChannel: channel %u out of range (max 83 for 400 MHz)", channel);
+      return Status::InvalidParameter;
+    }
+  } else if (_model == Model::E22_900T22 || _model == Model::E22_900T30) {
+    if (channel > 80) {
+      LORA_E22T_LOGE("setChannel: channel %u out of range (max 80 for 900 MHz)", channel);
+      return Status::InvalidParameter;
+    }
+  }
+
+  LORA_E22T_LOGI("Setting channel to %u (persistent=%d)...", channel, persistent);
+
+  status = _writeRegisters(Register::Reg2, 1, &channel, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Channel set successfully");
+  return status;
 }
 
 Status LoRaE22T::setPacketRSSI(const bool enable, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("%s packet RSSI (persistent=%d)...",
+    enable ? "Enabling" : "Disabling",
+    persistent);
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   _applyBits(reg3, enable ? 1 : 0, 7, 0x01);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Packet RSSI set successfully");
+  return status;
 }
 
 Status LoRaE22T::setTransmissionMode(const TxMode tx_mode, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting tx mode to %s (persistent=%d)...",
+    tx_mode == TxMode::Fixed ? "Fixed" : "Transparent",
+    persistent);
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   _applyBits(reg3, static_cast<uint8_t>(tx_mode), 6, 0x01);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Tx mode set successfully");
+  return status;
 }
 
 Status LoRaE22T::setRelayMode(const bool enable, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("%s relay mode (persistent=%d)...", enable ? "Enabling" : "Disabling", persistent);
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   _applyBits(reg3, enable ? 1 : 0, 5, 0x01);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Relay mode set successfully");
+  return status;
 }
 
 Status LoRaE22T::setListenBeforeTalk(const bool enable, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
+  LORA_E22T_LOGI("%s listen before talk (persistent=%d)...",
+    enable ? "Enabling" : "Disabling",
+    persistent);
+
   _applyBits(reg3, enable ? 1 : 0, 4, 0x01);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Listen before talk set successfully");
+  return status;
 }
 
 Status LoRaE22T::setWORMode(const WORMode wor_mode, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting WOR mode to %s (persistent=%d)...",
+    wor_mode == WORMode::Receiver ? "Receiver" : "Transmitter",
+    persistent);
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   _applyBits(reg3, static_cast<uint8_t>(wor_mode), 3, 0x01);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("WOR mode set successfully");
+  return status;
 }
 
 Status LoRaE22T::setWORCycleTime(const WORCycleTime wor_cycle_time, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting WOR cycle time (persistent=%d)...", persistent);
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   _applyBits(reg3, static_cast<uint8_t>(wor_cycle_time), 0, 0x07);
-  return _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+
+  status = _writeRegisters(Register::Reg3, 1, &reg3, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("WOR cycle time set successfully");
+  return status;
 }
 
 Status LoRaE22T::setEncryptionKey(const uint16_t key, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting encryption key (persistent=%d)...", persistent);
 
   uint8_t data[2] = {static_cast<uint8_t>(key >> 8), static_cast<uint8_t>(key & 0xFF)};
 
-  return _writeRegisters(Register::CryptH, 2, data, persistent);
+  status = _writeRegisters(Register::CryptH, 2, data, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("Encryption key set successfully");
+  return status;
 }
 
 Status LoRaE22T::setWORDelay(const uint16_t delay_ms, const bool persistent) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Setting WOR delay to %u (persistent=%d)...", delay_ms, persistent);
 
   uint8_t data[2] = {static_cast<uint8_t>(delay_ms >> 8), static_cast<uint8_t>(delay_ms & 0xFF)};
 
-  return _writeRegisters(Register::WdH, 2, data, persistent);
+  status = _writeRegisters(Register::WdH, 2, data, persistent);
+  if (status == Status::Ok) LORA_E22T_LOGI("WOR delay set successfully");
+  return status;
 }
 
 /* ------------------------------------ Configuration getters ----------------------------------- */
 
 Status LoRaE22T::getConfig(LoRaE22TConfig& config) {
-  if (!_initialized) return Status::Uninitialized;
-
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting configuration...");
 
   uint8_t data[_REG_COUNT_ALL] = {};
   status                       = _readRegisters(Register::AddrH, _REG_COUNT_ALL, data);
   if (status != Status::Ok) return status;
 
-  return _parseConfig(config, data, sizeof(data));
+  LORA_E22T_HEXV(data, _REG_COUNT_ALL);
+
+  status = _parseConfig(config, data, sizeof(data));
+  if (status == Status::Ok) LORA_E22T_LOGI("Configuration parsed successfully");
+  return status;
 }
 
 Status LoRaE22T::getWirelessConfig(LoRaE22TConfig& config) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting wireless configuration...");
 
   // Flush stale bytes before sending
   while (_serial->available())
@@ -554,15 +699,22 @@ Status LoRaE22T::getWirelessConfig(LoRaE22TConfig& config) {
       _serial->read();
       _serial->read();
       _serial->read();
+      LORA_E22T_LOGE("getWirelessConfig: module returned error response");
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+    if (millis() - start_time > _WIRELESS_RESPONSE_TIMEOUT_MS) {
+      LORA_E22T_LOGE("getWirelessConfig: serial timeout waiting for response");
+      return Status::SerialTimeout;
+    }
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
   const uint8_t prefix2 = static_cast<uint8_t>(_serial->read());
-  if (prefix1 != 0xCF || prefix2 != 0xCF) return Status::CommandFailed;
+  if (prefix1 != 0xCF || prefix2 != 0xCF) {
+    LORA_E22T_LOGE("getWirelessConfig: invalid response prefix 0x%02X 0x%02X", prefix1, prefix2);
+    return Status::CommandFailed;
+  }
 
   // Drain header bytes
   _serial->read(); // cmd byte
@@ -575,34 +727,44 @@ Status LoRaE22T::getWirelessConfig(LoRaE22TConfig& config) {
     data[i] = static_cast<uint8_t>(_serial->read());
   }
 
-  return _parseConfig(config, data, sizeof(data));
+  LORA_E22T_HEXV(data, _REG_COUNT_ALL);
+
+  status = _parseConfig(config, data, sizeof(data));
+  if (status == Status::Ok) LORA_E22T_LOGI("Wireless configuration parsed successfully");
+  return status;
 }
 
 Status LoRaE22T::getAddress(uint16_t& address) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting address...");
 
   uint8_t data[2] = {};
   status          = _readRegisters(Register::AddrH, 2, data);
   if (status != Status::Ok) return status;
 
   address = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+  LORA_E22T_LOGI("Address: 0x%04X", address);
   return Status::Ok;
 }
 
 Status LoRaE22T::getNetworkID(uint8_t& network_id) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
-  return _readRegisters(Register::NetID, 1, &network_id);
+  LORA_E22T_LOGI("Getting network ID...");
+
+  status = _readRegisters(Register::NetID, 1, &network_id);
+  if (status == Status::Ok) LORA_E22T_LOGI("Network ID: 0x%02X", network_id);
+  return status;
 }
 
 Status LoRaE22T::getUARTConfig(UARTBaudRate& baud_rate, UARTParity& parity) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting UART configuration...");
 
   uint8_t reg0 = 0;
   status       = _readRegisters(Register::Reg0, 1, &reg0);
@@ -610,166 +772,202 @@ Status LoRaE22T::getUARTConfig(UARTBaudRate& baud_rate, UARTParity& parity) {
 
   baud_rate = static_cast<UARTBaudRate>((reg0 >> 5) & 0x07);
   parity    = static_cast<UARTParity>((reg0 >> 3) & 0x03);
+
+  LORA_E22T_LOGI("UART configuration: baud rate=%u, parity=%u",
+    static_cast<uint8_t>(baud_rate),
+    static_cast<uint8_t>(parity));
   return Status::Ok;
 }
 
 Status LoRaE22T::getAirDataRate(uint8_t& raw_rate) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting air data rate...");
 
   uint8_t reg0 = 0;
   status       = _readRegisters(Register::Reg0, 1, &reg0);
   if (status != Status::Ok) return status;
 
   raw_rate = reg0 & 0x07;
+  LORA_E22T_LOGI("Air data rate: %u", static_cast<uint8_t>(raw_rate));
   return Status::Ok;
 }
 
 Status LoRaE22T::getSubpacketLength(SubpacketLength& subpacket_length) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting subpacket length...");
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   subpacket_length = static_cast<SubpacketLength>((reg1 >> 6) & 0x03);
+  LORA_E22T_LOGI("Subpacket length: %u", static_cast<uint8_t>(subpacket_length));
   return Status::Ok;
 }
 
 Status LoRaE22T::getAmbientRSSI(bool& enabled) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting ambient RSSI...");
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   enabled = (reg1 >> 5) & 0x01;
+  LORA_E22T_LOGI("Ambient RSSI: %s", enabled ? "ON" : "OFF");
   return Status::Ok;
 }
 
 Status LoRaE22T::getTransmissionPower(uint8_t& raw_power) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting transmission power...");
 
   uint8_t reg1 = 0;
   status       = _readRegisters(Register::Reg1, 1, &reg1);
   if (status != Status::Ok) return status;
 
   raw_power = reg1 & 0x03;
+  LORA_E22T_LOGI("Transmission power: %u", static_cast<uint8_t>(raw_power));
   return Status::Ok;
 }
 
 Status LoRaE22T::getChannel(uint8_t& channel) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
 
-  return _readRegisters(Register::Reg2, 1, &channel);
+  LORA_E22T_LOGI("Getting channel...");
+
+  status = _readRegisters(Register::Reg2, 1, &channel);
+  if (status == Status::Ok) LORA_E22T_LOGI("Channel: %u", static_cast<uint8_t>(channel));
+  return status;
 }
 
 Status LoRaE22T::getPacketRSSI(bool& enabled) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting packet RSSI...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   enabled = (reg3 >> 7) & 0x01;
+  LORA_E22T_LOGI("Packet RSSI: %s", enabled ? "ON" : "OFF");
   return Status::Ok;
 }
 
 Status LoRaE22T::getTransmissionMode(TxMode& tx_mode) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting transmission mode...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   tx_mode = static_cast<TxMode>((reg3 >> 6) & 0x01);
+  LORA_E22T_LOGI("Transmission mode: %s", tx_mode == TxMode::Fixed ? "Fixed" : "Transparent");
   return Status::Ok;
 }
 
 Status LoRaE22T::getRelayMode(bool& enabled) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting relay mode...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   enabled = (reg3 >> 5) & 0x01;
+  LORA_E22T_LOGI("Relay mode: %s", enabled ? "ON" : "OFF");
   return Status::Ok;
 }
 
 Status LoRaE22T::getListenBeforeTalk(bool& enabled) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting listen before talk...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   enabled = (reg3 >> 4) & 0x01;
+  LORA_E22T_LOGI("Listen before talk: %s", enabled ? "ON" : "OFF");
   return Status::Ok;
 }
 
 Status LoRaE22T::getWORMode(WORMode& wor_mode) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting WOR mode...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   wor_mode = static_cast<WORMode>((reg3 >> 3) & 0x01);
+  LORA_E22T_LOGI("WOR mode: %s", wor_mode == WORMode::Receiver ? "Receiver" : "Transmitter");
   return Status::Ok;
 }
 
 Status LoRaE22T::getWORCycleTime(WORCycleTime& wor_cycle_time) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting WOR cycle time...");
 
   uint8_t reg3 = 0;
   status       = _readRegisters(Register::Reg3, 1, &reg3);
   if (status != Status::Ok) return status;
 
   wor_cycle_time = static_cast<WORCycleTime>(reg3 & 0x07);
+  LORA_E22T_LOGI("WOR cycle time: %u", static_cast<uint8_t>(wor_cycle_time));
   return Status::Ok;
 }
 
 Status LoRaE22T::getWORDelay(uint16_t& delay_ms) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Configuration);
+  Status status = _checkInitAndMode(Mode::Configuration);
   if (status != Status::Ok) return status;
+
+  LORA_E22T_LOGI("Getting WOR delay...");
 
   uint8_t data[2] = {};
   status          = _readRegisters(Register::WdH, 2, data);
   if (status != Status::Ok) return status;
 
   delay_ms = (static_cast<uint16_t>(data[0]) << 8) | data[1];
+  LORA_E22T_LOGI("WOR delay: %u ms", delay_ms);
   return Status::Ok;
 }
 
 /* -------------------------------------- Data transmission ------------------------------------- */
 
 Status LoRaE22T::sendTransparentData(const uint8_t* data, const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Transmission);
+  Status status = _checkInitAndMode(Mode::Transmission);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendTransparentData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendTransparentData: sending %u bytes", data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   _serial->write(data, data_size);
   return _waitAuxHigh();
@@ -777,9 +975,16 @@ Status LoRaE22T::sendTransparentData(const uint8_t* data, const size_t data_size
 
 Status LoRaE22T::sendFixedData(const uint16_t address, const uint8_t channel, const uint8_t* data,
   const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Transmission);
+  Status status = _checkInitAndMode(Mode::Transmission);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendFixedData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendFixedData: addr=0x%04X, ch=%u, size=%u", address, channel, data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   // Frame: ADDH + ADDL + CH + data
   _serial->write(static_cast<uint8_t>(address >> 8));
@@ -791,9 +996,16 @@ Status LoRaE22T::sendFixedData(const uint16_t address, const uint8_t channel, co
 
 Status LoRaE22T::sendBroadcastFixedData(const uint8_t channel, const uint8_t* data,
   const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::Transmission);
+  Status status = _checkInitAndMode(Mode::Transmission);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendBroadcastFixedData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendBroadcastFixedData: ch=%u, size=%u", channel, data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   // Broadcast address is 0xFFFF
   _serial->write(static_cast<uint8_t>(0xFF));
@@ -804,9 +1016,16 @@ Status LoRaE22T::sendBroadcastFixedData(const uint8_t channel, const uint8_t* da
 }
 
 Status LoRaE22T::sendWORTransparentData(const uint8_t* data, const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::WakeOnRadio);
+  Status status = _checkInitAndMode(Mode::WakeOnRadio);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendWORTransparentData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendWORTransparentData: sending %u bytes", data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   _serial->write(data, data_size);
   return _waitAuxHigh(true, 0, _AUX_WOR_TIMEOUT_MS);
@@ -814,9 +1033,16 @@ Status LoRaE22T::sendWORTransparentData(const uint8_t* data, const size_t data_s
 
 Status LoRaE22T::sendWORFixedData(const uint16_t address, const uint8_t channel,
   const uint8_t* data, const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::WakeOnRadio);
+  Status status = _checkInitAndMode(Mode::WakeOnRadio);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendWORFixedData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendWORFixedData: addr=0x%04X, ch=%u, size=%u", address, channel, data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   // Frame: ADDH + ADDL + CH + data
   _serial->write(static_cast<uint8_t>(address >> 8));
@@ -828,9 +1054,16 @@ Status LoRaE22T::sendWORFixedData(const uint16_t address, const uint8_t channel,
 
 Status LoRaE22T::sendWORBroadcastFixedData(const uint8_t channel, const uint8_t* data,
   const size_t data_size) {
-  if (!_initialized) return Status::Uninitialized;
-  Status status = _checkMode(Mode::WakeOnRadio);
+  Status status = _checkInitAndMode(Mode::WakeOnRadio);
   if (status != Status::Ok) return status;
+
+  if (!data || data_size == 0) {
+    LORA_E22T_LOGE("sendWORBroadcastFixedData: invalid parameter");
+    return Status::InvalidParameter;
+  }
+
+  LORA_E22T_LOGD("sendWORBroadcastFixedData: ch=%u, size=%u", channel, data_size);
+  LORA_E22T_HEXV(data, data_size);
 
   // Broadcast address is 0xFFFF
   _serial->write(static_cast<uint8_t>(0xFF));
@@ -841,28 +1074,44 @@ Status LoRaE22T::sendWORBroadcastFixedData(const uint8_t channel, const uint8_t*
 }
 
 bool LoRaE22T::isDataAvailable() const {
-  if (!_initialized) return false;
+  if (!_initialized) {
+    LORA_E22T_LOGE("Module not initialized!");
+    return false;
+  }
+
   return _serial->available() > 0;
 }
 
 Status LoRaE22T::readData(const bool includes_rssi, uint8_t* buffer, const size_t buffer_size,
   size_t& data_size) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
+
+  if (!buffer || buffer_size == 0) {
+    LORA_E22T_LOGE("readData: invalid parameter");
+    return Status::InvalidParameter;
+  }
 
   // Wait for AUX to go high indicating data is ready
   // pre_delay=false because if data is available, AUX will already be LOW and we can skip the
   // initial delay (AUX goes to LOW before data starts arriving to serial)
-  Status status = _waitAuxHigh(false);
+  status = _waitAuxHigh(false);
   if (status != Status::Ok) return status;
 
   const size_t available = _serial->available();
   if (available <= 0) {
+    LORA_E22T_LOGW("readData: AUX went HIGH but no bytes in buffer");
     data_size = 0;
     return Status::Ok;
   }
 
   const size_t to_read = static_cast<size_t>(available);
-  if (to_read > buffer_size) return Status::BufferTooSmall;
+  if (to_read > buffer_size) {
+    LORA_E22T_LOGE("readData: buffer too small (%u bytes available, %u provided)",
+      to_read,
+      buffer_size);
+    return Status::BufferTooSmall;
+  }
 
   for (size_t i = 0; i < to_read; i++) {
     buffer[i] = static_cast<uint8_t>(_serial->read());
@@ -875,17 +1124,24 @@ Status LoRaE22T::readData(const bool includes_rssi, uint8_t* buffer, const size_
     data_size = to_read;
   }
 
+  LORA_E22T_LOGD("readData: received %u bytes", data_size);
+  LORA_E22T_HEXV(buffer, data_size);
+
   return Status::Ok;
 }
 
 int16_t LoRaE22T::getLastPacketRSSI() const { return -(256 - static_cast<int16_t>(_last_rssi)); }
 
 Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
-  if (!_initialized) return Status::Uninitialized;
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
 
   Status status1 = _checkMode(Mode::Transmission);
   Status status2 = _checkMode(Mode::WakeOnRadio);
-  if (status1 != Status::Ok && status2 != Status::Ok) return Status::WrongMode;
+  if (status1 != Status::Ok && status2 != Status::Ok) {
+    LORA_E22T_LOGE("readAmbientRSSI: must be in Transmission or WakeOnRadio mode");
+    return Status::WrongMode;
+  }
 
   // Flush stale bytes before sending
   while (_serial->available())
@@ -908,10 +1164,14 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
       _serial->read();
       _serial->read();
       _serial->read();
+      LORA_E22T_LOGE("readAmbientRSSI: module returned error response");
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) {
+      LORA_E22T_LOGE("readAmbientRSSI: serial timeout waiting for response");
+      return Status::SerialTimeout;
+    }
   }
 
   const uint8_t resp_cmd  = static_cast<uint8_t>(_serial->read());
@@ -919,12 +1179,18 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
   const uint8_t resp_len  = static_cast<uint8_t>(_serial->read());
 
   if (resp_cmd != static_cast<uint8_t>(Command::ReadRegister) || resp_addr != 0x00 ||
-      resp_len != 0x01)
+      resp_len != 0x01) {
+    LORA_E22T_LOGE("readAmbientRSSI: invalid response header 0x%02X 0x%02X 0x%02X",
+      resp_cmd,
+      resp_addr,
+      resp_len);
     return Status::CommandFailed;
+  }
 
   const uint8_t raw_rssi = static_cast<uint8_t>(_serial->read());
   rssi_dbm               = -(256 - static_cast<int16_t>(raw_rssi));
 
+  LORA_E22T_LOGD("readAmbientRSSI: %d dBm", rssi_dbm);
   return _waitAuxHigh();
 }
 
@@ -937,7 +1203,10 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms,
   if (pre_delay) delay(_AUX_PIN_DELAY_MS);
 
   while (digitalRead(_aux) == LOW) {
-    if (millis() - start_time > timeout_ms) return Status::AuxTimeout;
+    if (millis() - start_time > timeout_ms) {
+      LORA_E22T_LOGE("AUX timeout (%u ms)", timeout_ms);
+      return Status::AuxTimeout;
+    }
   }
 
   if (post_delay_ms > 0) delay(post_delay_ms);
@@ -946,15 +1215,40 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms,
   // Configuration mode to another mode
   const uint32_t secondary_start = millis();
   while (digitalRead(_aux) == LOW) {
-    if (millis() - secondary_start > timeout_ms) return Status::AuxTimeout;
+    if (millis() - secondary_start > timeout_ms) {
+      LORA_E22T_LOGE("AUX secondary pulse timeout (%u ms)", timeout_ms);
+      return Status::AuxTimeout;
+    }
+  }
+
+  return Status::Ok;
+}
+
+Status LoRaE22T::_checkInitialized() const {
+  if (!_initialized) {
+    LORA_E22T_LOGE("Module not initialized");
+    return Status::Uninitialized;
   }
 
   return Status::Ok;
 }
 
 Status LoRaE22T::_checkMode(const Mode required_mode) {
-  if (_current_mode != required_mode) return Status::WrongMode;
+  if (_current_mode != required_mode) {
+    LORA_E22T_LOGE("Wrong mode! Expected: %u, Current: %u",
+      static_cast<uint8_t>(required_mode),
+      static_cast<uint8_t>(_current_mode));
+    return Status::WrongMode;
+  }
+
   return Status::Ok;
+}
+
+Status LoRaE22T::_checkInitAndMode(const Mode required_mode) {
+  Status status = _checkInitialized();
+  if (status != Status::Ok) return status;
+
+  return _checkMode(required_mode);
 }
 
 Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uint8_t length,
@@ -985,10 +1279,18 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
       _serial->read();
       _serial->read();
       _serial->read();
+      LORA_E22T_LOGE("_sendCmd: module returned error response (reg=0x%02X, len=%u)",
+        static_cast<uint8_t>(reg_start),
+        length);
       return Status::CommandFailed;
     }
 
-    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) return Status::SerialTimeout;
+    if (millis() - start_time > _SERIAL_RESPONSE_TIMEOUT_MS) {
+      LORA_E22T_LOGE("_sendCmd: serial timeout (reg=0x%02X, len=%u)",
+        static_cast<uint8_t>(reg_start),
+        length);
+      return Status::SerialTimeout;
+    }
   }
 
   // Read and validate response header
@@ -1000,6 +1302,10 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
   // C1 <start_addr> <length>
   if (resp_cmd != static_cast<uint8_t>(Command::ReadRegister) ||
       resp_addr != static_cast<uint8_t>(reg_start) || resp_len != length) {
+    LORA_E22T_LOGE("_sendCmd: invalid response header 0x%02X 0x%02X 0x%02X",
+      resp_cmd,
+      resp_addr,
+      resp_len);
     return Status::CommandFailed;
   }
 
@@ -1011,6 +1317,11 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
       data[i] = b;
     }
   }
+
+  LORA_E22T_LOGV("_sendCmd: OK (cmd=0x%02X, reg=0x%02X, len=%u)",
+    static_cast<uint8_t>(cmd),
+    static_cast<uint8_t>(reg_start),
+    length);
 
   return _waitAuxHigh();
 }
@@ -1026,7 +1337,10 @@ Status LoRaE22T::_writeRegisters(const Register reg_start, const uint8_t length,
 }
 
 Status LoRaE22T::_parseConfig(LoRaE22TConfig& config, const uint8_t* data, const size_t length) {
-  if (data == nullptr || length < _REG_COUNT_ALL) return Status::InvalidParameter;
+  if (data == nullptr || length < _REG_COUNT_ALL) {
+    LORA_E22T_LOGE("_parseConfig: invalid parameter");
+    return Status::InvalidParameter;
+  }
 
   config.address    = (static_cast<uint16_t>(data[0]) << 8) | data[1];
   config.network_id = data[2];
