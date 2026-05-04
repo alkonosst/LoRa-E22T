@@ -57,6 +57,13 @@ enum class UARTParity : uint8_t {
   Even, // 8E1
 };
 
+/**
+ * @brief Maximum subpacket size for fragmented transmission. When the payload exceeds this size,
+ * the module splits it into fragments of at most this many bytes and transmits them sequentially.
+ * Smaller values free the RF channel more often between fragments, which can be useful in
+ * multi-node networks or under duty-cycle regulations, but reduce throughput due to per-fragment RF
+ * overhead. Leave at the default (240 bytes) unless you have a specific reason to reduce it.
+ */
 enum class SubpacketLength : uint8_t {
   Bytes240, // Default
   Bytes128,
@@ -192,6 +199,11 @@ struct LoRaE22TConfig {
 enum class Status : uint8_t { E22_STATUS_LIST };
 #undef X
 
+/**
+ * @brief Convert a `Status` code to a human-readable string for debugging and logging purposes.
+ * @param status The `Status` code to convert.
+ * @return `const char*` String representation of the status code.
+ */
 const char* statusToString(const Status status);
 
 } // namespace E22
