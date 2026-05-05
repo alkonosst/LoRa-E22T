@@ -297,6 +297,8 @@ Status LoRaE22T::setWirelessConfig(const LoRaE22TConfig& config, const bool pers
       LORA_E22T_LOGE("setWirelessConfig: serial timeout waiting for response");
       return Status::SerialTimeout;
     }
+
+    delay(1);
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
@@ -713,6 +715,8 @@ Status LoRaE22T::getWirelessConfig(LoRaE22TConfig& config) {
       LORA_E22T_LOGE("getWirelessConfig: serial timeout waiting for response");
       return Status::SerialTimeout;
     }
+
+    delay(1);
   }
 
   const uint8_t prefix1 = static_cast<uint8_t>(_serial->read());
@@ -1178,6 +1182,8 @@ Status LoRaE22T::readAmbientRSSI(int16_t& rssi_dbm) {
       LORA_E22T_LOGE("readAmbientRSSI: serial timeout waiting for response");
       return Status::SerialTimeout;
     }
+
+    delay(1);
   }
 
   const uint8_t resp_cmd  = static_cast<uint8_t>(_serial->read());
@@ -1213,6 +1219,8 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms,
       LORA_E22T_LOGE("AUX timeout (%u ms)", timeout_ms);
       return Status::AuxTimeout;
     }
+
+    delay(1);
   }
 
   if (post_delay_ms > 0) delay(post_delay_ms);
@@ -1225,6 +1233,8 @@ Status LoRaE22T::_waitAuxHigh(const bool pre_delay, const uint8_t post_delay_ms,
       LORA_E22T_LOGE("AUX secondary pulse timeout (%u ms)", timeout_ms);
       return Status::AuxTimeout;
     }
+
+    delay(1);
   }
 
   return Status::Ok;
@@ -1297,6 +1307,8 @@ Status LoRaE22T::_sendCmd(const Command cmd, const Register reg_start, const uin
         length);
       return Status::SerialTimeout;
     }
+
+    delay(1);
   }
 
   // Read and validate response header
