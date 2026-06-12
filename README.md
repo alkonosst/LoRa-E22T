@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  <a href="https://www.ardu-badge.com/LoRa-E22T">
+    <img src="https://www.ardu-badge.com/badge/LoRa-E22T.svg?" alt="Arduino Library Badge">
+  </a>
+  <a href="https://registry.platformio.org/libraries/alkonosst/LoRa-E22T">
+    <img src="https://badges.registry.platformio.org/packages/alkonosst/library/LoRa-E22T.svg" alt="PlatformIO Registry">
+  </a>
+  <br><br>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge&color=blue" alt="License">
   </a>
